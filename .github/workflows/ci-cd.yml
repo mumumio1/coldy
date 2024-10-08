@@ -1,0 +1,271 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  PROJECT_ID: coldy-prod
+  REGION: us-central1
+  GKE_CLUSTER: coldy-cluster
+  GKE_ZONE: us-central1-a
+
+jobs:
+  lint-and-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.out
+          flags: unittests
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run gosec
+        uses: securego/gosec@master
+        with:
+          args: -exclude=G103,G104,G114 -exclude-dir=proto ./...
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+        if: always()
+
+  build-and-push:
+    name: Build and Push Images
+    needs: [lint-and-test, security-scan]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      id-token: write
+
+    strategy:
+      matrix:
+        service: [users, catalog, orders, payments, inventory, notification]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker gcr.io
+
+      - name: Build Docker image
+        run: |
+          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ matrix.service }}:${{ github.sha }} \
+                       -t gcr.io/${{ env.PROJECT_ID }}/${{ matrix.service }}:latest \
+                       -f services/${{ matrix.service }}/Dockerfile .
+
+      - name: Push Docker image
+        run: |
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ matrix.service }}:${{ github.sha }}
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ matrix.service }}:latest
+
+  deploy-dev:
+    name: Deploy to Dev
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v1
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GKE_ZONE }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: '3.12.0'
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install coldy-dev ./deploy/helm/coldy \
+            --namespace coldy-dev \
+            --create-namespace \
+            -f deploy/helm/coldy/values-dev.yaml \
+            --set global.imageTag=${{ github.sha }} \
+            --wait \
+            --timeout 10m
+
+  deploy-prod-canary:
+    name: Deploy to Prod (Canary)
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v1
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GKE_ZONE }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: '3.12.0'
+
+      - name: Deploy Canary (10%)
+        run: |
+          helm upgrade --install coldy-canary ./deploy/helm/coldy \
+            --namespace coldy-prod \
+            --create-namespace \
+            -f deploy/helm/coldy/values-prod.yaml \
+            --set global.imageTag=${{ github.sha }} \
+            --set canary.enabled=true \
+            --set canary.weight=10 \
+            --wait \
+            --timeout 10m
+
+      - name: Wait and monitor metrics
+        run: |
+          echo "Monitoring canary deployment for 5 minutes..."
+          sleep 300
+
+      - name: Check SLO metrics
+        id: check-slo
+        run: |
+          # Query Prometheus/Cloud Monitoring for error rate and latency
+          ERROR_RATE=$(kubectl exec -n coldy-prod -it prometheus-0 -- \
+            promtool query instant 'rate(http_requests_total{status=~"5.."}[5m]) > 0.01')
+          
+          if [ ! -z "$ERROR_RATE" ]; then
+            echo "SLO violation detected! Error rate too high"
+            echo "rollback=true" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          echo "rollback=false" >> $GITHUB_OUTPUT
+
+      - name: Rollback on failure
+        if: failure() || steps.check-slo.outputs.rollback == 'true'
+        run: |
+          helm rollback coldy-canary -n coldy-prod
+
+      - name: Promote to 50%
+        if: success()
+        run: |
+          helm upgrade coldy-canary ./deploy/helm/coldy \
+            --namespace coldy-prod \
+            -f deploy/helm/coldy/values-prod.yaml \
+            --set global.imageTag=${{ github.sha }} \
+            --set canary.weight=50 \
+            --reuse-values
+
+      - name: Wait and monitor 50%
+        if: success()
+        run: sleep 300
+
+      - name: Promote to 100%
+        if: success()
+        run: |
+          helm upgrade coldy ./deploy/helm/coldy \
+            --namespace coldy-prod \
+            -f deploy/helm/coldy/values-prod.yaml \
+            --set global.imageTag=${{ github.sha }} \
+            --wait \
+            --timeout 10m
+          
+          # Remove canary deployment
+          helm uninstall coldy-canary -n coldy-prod
+
+  notify:
+    name: Notify
+    needs: [deploy-dev, deploy-prod-canary]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Send Slack notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: 'Deployment ${{ job.status }}'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+

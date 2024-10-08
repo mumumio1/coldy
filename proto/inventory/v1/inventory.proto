@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package inventory.v1;
+
+option go_package = "github.com/mumumio1/coldy/proto/inventory/v1;inventoryv1";
+
+import "google/protobuf/timestamp.proto";
+import "proto/common/v1/common.proto";
+
+service InventoryService {
+  rpc ReserveStock(ReserveStockRequest) returns (ReserveStockResponse);
+  rpc ReleaseStock(ReleaseStockRequest) returns (ReleaseStockResponse);
+  rpc CommitStock(CommitStockRequest) returns (CommitStockResponse);
+  rpc GetInventory(GetInventoryRequest) returns (GetInventoryResponse);
+  rpc AdjustInventory(AdjustInventoryRequest) returns (AdjustInventoryResponse);
+}
+
+message Inventory {
+  string product_id = 1;
+  int32 available_quantity = 2;
+  int32 reserved_quantity = 3;
+  int32 total_quantity = 4;
+  int32 version = 5; // For optimistic locking
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+message ReservationRequest {
+  string product_id = 1;
+  int32 quantity = 2;
+}
+
+message ReserveStockRequest {
+  common.v1.RequestMetadata metadata = 1;
+  string reservation_id = 2; // Unique ID (order_id)
+  repeated ReservationRequest items = 3;
+  int32 ttl_seconds = 4; // Reservation TTL (default 15 min)
+}
+
+message ReserveStockResponse {
+  bool success = 1;
+  string reservation_id = 2;
+  repeated ReservationFailure failures = 3;
+}
+
+message ReservationFailure {
+  string product_id = 1;
+  string reason = 2;
+  int32 available = 3;
+  int32 requested = 4;
+}
+
+message ReleaseStockRequest {
+  common.v1.RequestMetadata metadata = 1;
+  string reservation_id = 2;
+}
+
+message ReleaseStockResponse {
+  bool success = 1;
+}
+
+message CommitStockRequest {
+  common.v1.RequestMetadata metadata = 1;
+  string reservation_id = 2;
+}
+
+message CommitStockResponse {
+  bool success = 1;
+}
+
+message GetInventoryRequest {
+  common.v1.RequestMetadata metadata = 1;
+  string product_id = 2;
+}
+
+message GetInventoryResponse {
+  Inventory inventory = 1;
+}
+
+message AdjustInventoryRequest {
+  common.v1.RequestMetadata metadata = 1;
+  string product_id = 2;
+  int32 quantity_delta = 3; // Can be positive or negative
+  string reason = 4; // Restock, damage, etc.
+}
+
+message AdjustInventoryResponse {
+  Inventory inventory = 1;
+}
+

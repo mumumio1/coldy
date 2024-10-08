@@ -1,0 +1,89 @@
+groups:
+  - name: SLO Alerts
+    interval: 30s
+    rules:
+      # Order API SLO: p95 latency ≤ 120ms
+      - alert: OrderAPIHighLatency
+        expr: histogram_quantile(0.95, rate(coldy_orders_request_duration_seconds_bucket[5m])) > 0.120
+        for: 5m
+        labels:
+          severity: warning
+          slo: latency
+        annotations:
+          summary: "Order API p95 latency exceeded SLO"
+          description: "Order API p95 latency is {{ $value }}s (threshold: 0.120s)"
+
+      # Order API SLO: error rate ≤ 0.8%
+      - alert: OrderAPIHighErrorRate
+        expr: sum(rate(coldy_orders_errors_total[10m])) / sum(rate(coldy_orders_requests_total[10m])) > 0.008
+        for: 10m
+        labels:
+          severity: critical
+          slo: error_rate
+        annotations:
+          summary: "Order API error rate exceeded SLO"
+          description: "Order API error rate is {{ $value }}% (threshold: 0.8%)"
+
+      # Payment flow SLO: end-to-end ≤ 2.0s p95
+      - alert: PaymentFlowHighLatency
+        expr: histogram_quantile(0.95, rate(coldy_payments_request_duration_seconds_bucket[5m])) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          slo: latency
+        annotations:
+          summary: "Payment flow p95 latency exceeded SLO"
+          description: "Payment flow p95 latency is {{ $value }}s (threshold: 2.0s)"
+
+      # Payment flow SLO: success rate ≥ 98%
+      - alert: PaymentFlowLowSuccessRate
+        expr: sum(rate(coldy_payments_business_events_total{event_type="payment.succeeded"}[10m])) / sum(rate(coldy_payments_business_events_total{event_type=~"payment.*"}[10m])) < 0.98
+        for: 10m
+        labels:
+          severity: critical
+          slo: success_rate
+        annotations:
+          summary: "Payment success rate below SLO"
+          description: "Payment success rate is {{ $value }}% (threshold: 98%)"
+
+      # Database connection saturation
+      - alert: DatabaseConnectionSaturation
+        expr: coldy_db_connections_active / 25 > 0.80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database connection pool saturation"
+          description: "DB connections at {{ $value }}% of max (threshold: 80%)"
+
+      # Inventory reservation failures
+      - alert: InventoryReservationFailures
+        expr: sum(rate(coldy_inventory_business_events_total{status="failed"}[15m])) / sum(rate(coldy_inventory_business_events_total[15m])) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+          slo: reservation_failures
+        annotations:
+          summary: "High inventory reservation failure rate"
+          description: "Inventory reservation failures at {{ $value }}% (threshold: 5%)"
+
+      # Circuit breaker open
+      - alert: CircuitBreakerOpen
+        expr: coldy_payments_circuit_breaker_state == 2
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Payment provider circuit breaker opened"
+          description: "Circuit breaker is open - payment provider unavailable"
+
+      # Outbox processing lag
+      - alert: OutboxProcessingLag
+        expr: coldy_orders_outbox_unpublished_events > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Outbox event processing lagging"
+          description: "{{ $value }} unpublished events in outbox"
+

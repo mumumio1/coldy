@@ -1,0 +1,195 @@
+global:
+  projectId: "coldy-prod"
+  region: "us-central1"
+  imageRegistry: "gcr.io"
+  imageTag: "latest"
+  
+  database:
+    host: "10.0.0.3"  # Cloud SQL private IP
+    port: 5432
+    user: "coldy"
+    name: "coldy"
+    sslMode: "require"
+    
+  redis:
+    host: "10.0.0.4"  # MemoryStore private IP
+    port: 6379
+    
+  tracing:
+    enabled: true
+    endpoint: "otel-collector:4317"
+
+# Users Service
+users:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: gcr.io/coldy-prod/users
+    tag: latest
+  
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+      
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    
+  service:
+    type: ClusterIP
+    grpcPort: 50051
+    metricsPort: 9090
+
+# Catalog Service
+catalog:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: gcr.io/coldy-prod/catalog
+    tag: latest
+    
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+      
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    
+  service:
+    type: ClusterIP
+    grpcPort: 50052
+    metricsPort: 9091
+
+# Orders Service
+orders:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: gcr.io/coldy-prod/orders
+    tag: latest
+    
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+      
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 15
+    targetCPUUtilizationPercentage: 70
+    
+  service:
+    type: ClusterIP
+    grpcPort: 50053
+    metricsPort: 9092
+
+# Payments Service
+payments:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: gcr.io/coldy-prod/payments
+    tag: latest
+    
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+      
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    
+  service:
+    type: ClusterIP
+    grpcPort: 50054
+    metricsPort: 9093
+
+# Inventory Service
+inventory:
+  enabled: true
+  replicaCount: 3
+  image:
+    repository: gcr.io/coldy-prod/inventory
+    tag: latest
+    
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+      
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    
+  service:
+    type: ClusterIP
+    grpcPort: 50055
+    metricsPort: 9094
+
+# Notification Service
+notification:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: gcr.io/coldy-prod/notification
+    tag: latest
+    
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# Ingress (NGINX)
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: api.coldy.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: coldy-tls
+      hosts:
+        - api.coldy.example.com
+
+# PodDisruptionBudget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+

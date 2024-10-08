@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package common.v1;
+
+option go_package = "github.com/mumumio1/coldy/proto/common/v1;commonv1";
+
+import "google/protobuf/timestamp.proto";
+
+// Metadata for request tracing and correlation
+message RequestMetadata {
+  string request_id = 1;
+  string correlation_id = 2;
+  string trace_id = 3;
+  string span_id = 4;
+  string user_id = 5;
+  google.protobuf.Timestamp timestamp = 6;
+}
+
+// Standard pagination request
+message PaginationRequest {
+  int32 page_size = 1;
+  string cursor = 2; // Cursor-based pagination (created_at,id)
+}
+
+// Standard pagination response
+message PaginationResponse {
+  string next_cursor = 1;
+  bool has_more = 2;
+  int32 total_count = 3;
+}
+
+// Standard error response
+message Error {
+  string code = 1;
+  string message = 2;
+  map<string, string> details = 3;
+}
+
+// Money representation
+message Money {
+  string currency = 1; // ISO 4217 (USD, EUR, etc.)
+  int64 amount = 2;    // Amount in smallest unit (cents)
+}
+
+// Address
+message Address {
+  string street = 1;
+  string city = 2;
+  string state = 3;
+  string postal_code = 4;
+  string country = 5;
+}
+

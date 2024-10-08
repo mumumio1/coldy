@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package catalog.v1;
+
+option go_package = "github.com/mumumio1/coldy/proto/catalog/v1;catalogv1";
+
+import "google/protobuf/timestamp.proto";
+import "proto/common/v1/common.proto";
+
+service CatalogService {
+  rpc GetProduct(GetProductRequest) returns (GetProductResponse);
+  rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
+  rpc CreateProduct(CreateProductRequest) returns (CreateProductResponse);
+  rpc UpdateProduct(UpdateProductRequest) returns (UpdateProductResponse);
+  rpc UpdateStock(UpdateStockRequest) returns (UpdateStockResponse);
+  rpc CheckAvailability(CheckAvailabilityRequest) returns (CheckAvailabilityResponse);
+}
+
+message Product {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string sku = 4;
+  common.v1.Money price = 5;
+  int32 stock_quantity = 6;
+  string category = 7;
+  repeated string image_urls = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+message GetProductRequest {
+  common.v1.RequestMetadata metadata = 1;
+  string product_id = 2;
+}
+
+message GetProductResponse {
+  Product product = 1;
+}
+
+message ListProductsRequest {
+  common.v1.RequestMetadata metadata = 1;
+  common.v1.PaginationRequest pagination = 2;
+  string category = 3;
+  string search_query = 4;
+}
+
+message ListProductsResponse {
+  repeated Product products = 1;
+  common.v1.PaginationResponse pagination = 2;
+}
+
+message CreateProductRequest {
+  common.v1.RequestMetadata metadata = 1;
+  string name = 2;
+  string description = 3;
+  string sku = 4;
+  common.v1.Money price = 5;
+  int32 stock_quantity = 6;
+  string category = 7;
+  repeated string image_urls = 8;
+}
+
+message CreateProductResponse {
+  Product product = 1;
+}
+
+message UpdateProductRequest {
+  common.v1.RequestMetadata metadata = 1;
+  string product_id = 2;
+  string name = 3;
+  string description = 4;
+  common.v1.Money price = 5;
+  string category = 6;
+}
+
+message UpdateProductResponse {
+  Product product = 1;
+}
+
+message UpdateStockRequest {
+  common.v1.RequestMetadata metadata = 1;
+  string product_id = 2;
+  int32 quantity_delta = 3; // Can be positive or negative
+}
+
+message UpdateStockResponse {
+  int32 new_stock_quantity = 1;
+}
+
+message CheckAvailabilityRequest {
+  common.v1.RequestMetadata metadata = 1;
+  repeated StockCheck items = 2;
+}
+
+message StockCheck {
+  string product_id = 1;
+  int32 quantity = 2;
+}
+
+message CheckAvailabilityResponse {
+  bool available = 1;
+  repeated UnavailableItem unavailable_items = 2;
+}
+
+message UnavailableItem {
+  string product_id = 1;
+  int32 requested = 2;
+  int32 available = 3;
+}
+

@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package payments.v1;
+
+option go_package = "github.com/mumumio1/coldy/proto/payments/v1;paymentsv1";
+
+import "google/protobuf/timestamp.proto";
+import "proto/common/v1/common.proto";
+
+service PaymentService {
+  rpc CreatePayment(CreatePaymentRequest) returns (CreatePaymentResponse);
+  rpc GetPayment(GetPaymentRequest) returns (GetPaymentResponse);
+  rpc ConfirmPayment(ConfirmPaymentRequest) returns (ConfirmPaymentResponse);
+  rpc CancelPayment(CancelPaymentRequest) returns (CancelPaymentResponse);
+  rpc RefundPayment(RefundPaymentRequest) returns (RefundPaymentResponse);
+}
+
+enum PaymentStatus {
+  PAYMENT_STATUS_UNSPECIFIED = 0;
+  PAYMENT_STATUS_PENDING = 1;
+  PAYMENT_STATUS_PROCESSING = 2;
+  PAYMENT_STATUS_SUCCEEDED = 3;
+  PAYMENT_STATUS_FAILED = 4;
+  PAYMENT_STATUS_CANCELLED = 5;
+  PAYMENT_STATUS_REFUNDED = 6;
+}
+
+enum PaymentMethod {
+  PAYMENT_METHOD_UNSPECIFIED = 0;
+  PAYMENT_METHOD_CARD = 1;
+  PAYMENT_METHOD_PAYPAL = 2;
+  PAYMENT_METHOD_BANK_TRANSFER = 3;
+}
+
+message Payment {
+  string id = 1;
+  string order_id = 2;
+  string user_id = 3;
+  common.v1.Money amount = 4;
+  PaymentStatus status = 5;
+  PaymentMethod method = 6;
+  string provider_transaction_id = 7;
+  string error_message = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+message CreatePaymentRequest {
+  common.v1.RequestMetadata metadata = 1;
+  string idempotency_key = 2;
+  string order_id = 3;
+  string user_id = 4;
+  common.v1.Money amount = 5;
+  PaymentMethod method = 6;
+  map<string, string> payment_details = 7; // Card number, etc.
+}
+
+message CreatePaymentResponse {
+  Payment payment = 1;
+  bool from_cache = 2;
+}
+
+message GetPaymentRequest {
+  common.v1.RequestMetadata metadata = 1;
+  string payment_id = 2;
+}
+
+message GetPaymentResponse {
+  Payment payment = 1;
+}
+
+message ConfirmPaymentRequest {
+  common.v1.RequestMetadata metadata = 1;
+  string payment_id = 2;
+}
+
+message ConfirmPaymentResponse {
+  Payment payment = 1;
+}
+
+message CancelPaymentRequest {
+  common.v1.RequestMetadata metadata = 1;
+  string payment_id = 2;
+  string reason = 3;
+}
+
+message CancelPaymentResponse {
+  Payment payment = 1;
+}
+
+message RefundPaymentRequest {
+  common.v1.RequestMetadata metadata = 1;
+  string payment_id = 2;
+  common.v1.Money amount = 3; // Partial or full refund
+  string reason = 4;
+}
+
+message RefundPaymentResponse {
+  Payment payment = 1;
+  string refund_id = 2;
+}
+
